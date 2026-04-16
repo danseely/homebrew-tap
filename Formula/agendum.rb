@@ -8,7 +8,9 @@ class Agendum < Formula
   license "Apache-2.0"
 
   depends_on "gh"
+  depends_on "pkgconf" => :build
   depends_on "python@3.13"
+  depends_on "rust" => :build
 
   resource "annotated-doc" do
     url "https://files.pythonhosted.org/packages/57/ba/046ceea27344560984e26a590f90bc7f4a75b06701f653222458922b558c/annotated_doc-0.0.4.tar.gz"
