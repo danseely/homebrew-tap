@@ -10,6 +10,7 @@ class Agendum < Formula
   depends_on "pkgconf" => :build
   depends_on "rust" => :build
   depends_on "gh"
+  depends_on "libffi"
   depends_on "openssl@3"
   depends_on "python@3.13"
 
