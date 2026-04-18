@@ -8,17 +8,24 @@ import re
 import tarfile
 from collections import deque
 from pathlib import Path
-import tomllib
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - exercised via subprocess tests
+    tomllib = None
 
 
 class FormulaUpdateError(RuntimeError):
     """Raised when the release tarball cannot be rendered into a formula."""
 
 
+TARGET_PYTHON_VERSION = "3.13"
+
 MARKER_ENV = {
     "implementation_name": "cpython",
     "platform_python_implementation": "CPython",
-    "python_full_version": "3.13",
+    "python_version": TARGET_PYTHON_VERSION,
+    "python_full_version": TARGET_PYTHON_VERSION,
     "sys_platform": "linux",
 }
 
@@ -32,6 +39,9 @@ def compute_sha256(path: Path) -> str:
 
 
 def extract_lockfile(tarball_path: Path) -> dict:
+    if tomllib is None:
+        raise FormulaUpdateError("update-formula-from-release.py requires Python 3.11+")
+
     with tarfile.open(tarball_path, "r:gz") as archive:
         lock_member = next(
             (member for member in archive.getmembers() if member.name.endswith("/uv.lock")),
