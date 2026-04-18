@@ -12,7 +12,9 @@ class Agendum < Formula
   depends_on "gh"
   depends_on "libffi"
   depends_on "openssl@3"
-  depends_on "python@3.13"  resource "annotated-types" do
+  depends_on "python@3.13"
+
+  resource "annotated-types" do
     url "https://files.pythonhosted.org/packages/ee/67/531ea369ba64dcff5ec9c3402f9f51bf748cec26dde048a2f973a4eea7f5/annotated_types-0.7.0.tar.gz"
     sha256 "aff07c09a53a08bc8cfccb9c85b05f1aa9a2a6f23728d790723543408344ce89"
   end
@@ -176,6 +178,7 @@ class Agendum < Formula
     url "https://files.pythonhosted.org/packages/5e/da/6eee1ff8b6cbeed47eeb5229749168e81eb4b7b999a1a15a7176e51410c9/uvicorn-0.44.0.tar.gz"
     sha256 "6c942071b68f07e178264b9152f1f16dfac5da85880c4ce06366a96d70d4f31e"
   end
+
   def install
     virtualenv_install_with_resources
   end

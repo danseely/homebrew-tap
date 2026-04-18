@@ -225,8 +225,7 @@ def rewrite_formula(
     if install_start == -1:
         raise FormulaUpdateError("formula is missing a def install block")
 
-    resource_marker = '\n  resource "'
-    resource_start = text.find(resource_marker)
+    resource_start = text.find('resource "', 0, install_start)
     if resource_start == -1:
         header = text[:install_start]
     else:
@@ -247,9 +246,11 @@ def rewrite_formula(
         label="formula sha256",
     )
 
-    tail = text[install_start + 1 :]
-    separator = resource_blocks if resource_blocks else "\n"
-    formula_path.write_text(header + separator + tail)
+    sections = [header.rstrip()]
+    if resource_blocks:
+        sections.append(resource_blocks.rstrip())
+    sections.append(text[install_start + 1 :].strip("\n"))
+    formula_path.write_text("\n\n".join(sections) + "\n")
 
 
 def main() -> None:
