@@ -110,12 +110,6 @@ jobs:
             echo "BASE_BRANCH=$base_branch"
           } >>"$GITHUB_ENV"
 
-      - name: Tap local repo
-        shell: bash
-        run: |
-          set -euo pipefail
-          brew tap "$GITHUB_REPOSITORY_OWNER/tap" "$GITHUB_WORKSPACE"
-
       - name: Update formula version
         shell: bash
         run: |
