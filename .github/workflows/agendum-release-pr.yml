@@ -94,6 +94,11 @@ jobs:
             version="${tag#v}"
           fi
 
+          canonical_tarball_url="$tarball_url"
+          if [[ -n "$source_repo" ]] && [[ "$source_repo" == */* ]]; then
+            canonical_tarball_url="https://github.com/$source_repo/archive/refs/tags/$tag.tar.gz"
+          fi
+
           branch="release/agendum-${tag#v}"
           branch="${branch//\//-}"
           branch="${branch//[^A-Za-z0-9._-]/-}"
@@ -104,7 +109,7 @@ jobs:
             echo "TAG=$tag"
             echo "VERSION=$version"
             echo "RELEASE_URL=$release_url"
-            echo "TARBALL_URL=$tarball_url"
+            echo "TARBALL_URL=$canonical_tarball_url"
             echo "PUBLISHED_AT=$published_at"
             echo "BRANCH=$branch"
             echo "BASE_BRANCH=$base_branch"

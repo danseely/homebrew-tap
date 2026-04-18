@@ -88,6 +88,18 @@ def compare_marker_values(key: str, actual: str, expected: str) -> int:
     return (actual > expected) - (actual < expected)
 
 
+def normalize_tarball_url(tarball_url: str) -> str:
+    match = re.fullmatch(
+        r"https://api\.github\.com/repos/([^/]+)/([^/]+)/tarball/([^/]+)",
+        tarball_url,
+    )
+    if match is None:
+        return tarball_url
+
+    owner, repo, ref = match.groups()
+    return f"https://github.com/{owner}/{repo}/archive/refs/tags/{ref}.tar.gz"
+
+
 def marker_applies(marker: str | None) -> bool:
     if not marker:
         return True
@@ -213,17 +225,18 @@ def rewrite_formula(
     if install_start == -1:
         raise FormulaUpdateError("formula is missing a def install block")
 
-    resource_marker = '\n  resource "'
-    resource_start = text.find(resource_marker)
+    resource_start = text.find('resource "', 0, install_start)
     if resource_start == -1:
         header = text[:install_start]
     else:
         header = text[:resource_start]
 
+    normalized_tarball_url = normalize_tarball_url(tarball_url)
+
     header = replace_once(
         header,
         r'^  url ".*"$',
-        f'  url "{tarball_url}"',
+        f'  url "{normalized_tarball_url}"',
         label="formula url",
     )
     header = replace_once(
@@ -233,9 +246,11 @@ def rewrite_formula(
         label="formula sha256",
     )
 
-    tail = text[install_start + 1 :]
-    separator = resource_blocks if resource_blocks else "\n"
-    formula_path.write_text(header + separator + tail)
+    sections = [header.rstrip()]
+    if resource_blocks:
+        sections.append(resource_blocks.rstrip())
+    sections.append(text[install_start + 1 :].strip("\n"))
+    formula_path.write_text("\n\n".join(sections) + "\n")
 
 
 def main() -> None:
