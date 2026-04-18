@@ -3,7 +3,7 @@ class Agendum < Formula
 
   desc "Terminal dashboard for GitHub PRs, issues, and tasks"
   homepage "https://github.com/danseely/agendum"
-  url "https://api.github.com/repos/danseely/agendum/tarball/v0.2.0"
+  url "https://github.com/danseely/agendum/archive/refs/tags/v0.2.0.tar.gz"
   sha256 "bad02f5311e8bc77dc6e7ddebac31dcc047920e602e17c1e756e11579606999d"
   license "Apache-2.0"
 

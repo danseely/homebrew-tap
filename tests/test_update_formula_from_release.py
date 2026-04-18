@@ -16,6 +16,7 @@ SCRIPT_PATH = (
     Path(__file__).resolve().parents[1] / "scripts" / "update-formula-from-release.py"
 )
 TARBALL_URL = "https://api.github.com/repos/danseely/agendum/tarball/v0.2.0"
+FORMULA_TARBALL_URL = "https://github.com/danseely/agendum/archive/refs/tags/v0.2.0.tar.gz"
 
 
 def find_python(*candidates: str) -> str | None:
@@ -163,11 +164,40 @@ class UpdateFormulaFromReleaseTests(unittest.TestCase):
         updated = formula_path.read_text()
         expected_sha256 = hashlib.sha256(tarball_path.read_bytes()).hexdigest()
 
-        self.assertIn(f'url "{TARBALL_URL}"', updated)
+        self.assertIn(f'url "{FORMULA_TARBALL_URL}"', updated)
         self.assertIn(f'sha256 "{expected_sha256}"', updated)
         self.assertNotIn('resource "legacy"', updated)
         self.assertLess(updated.index('resource "anyio"'), updated.index('resource "idna"'))
         self.assertLess(updated.index('resource "idna"'), updated.index('resource "textual"'))
+
+    def test_normalizes_github_api_tarball_urls_for_formula_output(self) -> None:
+        formula_path = self.write_formula()
+        tarball_path = self.write_tarball(
+            lockfile_text=textwrap.dedent(
+                """\
+                version = 1
+
+                [[package]]
+                name = "agendum"
+                version = "0.2.0"
+                source = { editable = "." }
+                dependencies = [{ name = "rich" }]
+
+                [[package]]
+                name = "rich"
+                version = "14.3.4"
+                dependencies = []
+                sdist = { url = "https://example.com/rich-14.3.4.tar.gz", hash = "sha256:richhash" }
+                """
+            )
+        )
+
+        result = self.run_script(formula_path, tarball_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        updated = formula_path.read_text()
+        self.assertIn(f'url "{FORMULA_TARBALL_URL}"', updated)
+        self.assertNotIn(f'url "{TARBALL_URL}"', updated)
 
     def test_preserves_install_and_test_blocks(self) -> None:
         formula_path = self.write_formula()
