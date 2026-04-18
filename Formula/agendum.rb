@@ -227,6 +227,6 @@ class Agendum < Formula
     ENV["HOME"] = testpath
     assert_match version.to_s, shell_output("#{bin}/agendum --version")
     system bin/"agendum", "self-check"
-    assert_predicate testpath/".agendum/agendum.db", :exist?
+    assert_path_exists testpath/".agendum/agendum.db"
   end
 end
