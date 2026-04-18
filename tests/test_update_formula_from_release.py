@@ -312,6 +312,60 @@ class UpdateFormulaFromReleaseTests(unittest.TestCase):
         self.assertNotIn('resource "pywin32"', updated)
         self.assertNotIn('resource "typing-extensions"', updated)
 
+    def test_uses_numeric_ordering_for_python_version_markers(self) -> None:
+        formula_path = self.write_formula()
+        tarball_path = self.write_tarball(
+            lockfile_text=textwrap.dedent(
+                """\
+                version = 1
+
+                [[package]]
+                name = "agendum"
+                version = "0.2.0"
+                source = { editable = "." }
+                dependencies = [
+                  { name = "keep-ge-3-10", marker = "python_version >= '3.10'" },
+                  { name = "skip-ge-3-14", marker = "python_version >= '3.14'" },
+                  { name = "keep-full-le-3-13-0", marker = "python_full_version <= '3.13.0'" },
+                  { name = "skip-full-gt-3-13-0", marker = "python_full_version > '3.13.0'" },
+                ]
+
+                [[package]]
+                name = "keep-ge-3-10"
+                version = "1.0.0"
+                dependencies = []
+                sdist = { url = "https://example.com/keep-ge-3-10-1.0.0.tar.gz", hash = "sha256:keepge310hash" }
+
+                [[package]]
+                name = "skip-ge-3-14"
+                version = "1.0.0"
+                dependencies = []
+                sdist = { url = "https://example.com/skip-ge-3-14-1.0.0.tar.gz", hash = "sha256:skipge314hash" }
+
+                [[package]]
+                name = "keep-full-le-3-13-0"
+                version = "1.0.0"
+                dependencies = []
+                sdist = { url = "https://example.com/keep-full-le-3-13-0-1.0.0.tar.gz", hash = "sha256:keepfullhash" }
+
+                [[package]]
+                name = "skip-full-gt-3-13-0"
+                version = "1.0.0"
+                dependencies = []
+                sdist = { url = "https://example.com/skip-full-gt-3-13-0-1.0.0.tar.gz", hash = "sha256:skipfullhash" }
+                """
+            )
+        )
+
+        result = self.run_script(formula_path, tarball_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        updated = formula_path.read_text()
+        self.assertIn('resource "keep-ge-3-10"', updated)
+        self.assertIn('resource "keep-full-le-3-13-0"', updated)
+        self.assertNotIn('resource "skip-ge-3-14"', updated)
+        self.assertNotIn('resource "skip-full-gt-3-13-0"', updated)
+
     def test_requires_python_3_11_plus_runtime(self) -> None:
         if RUNTIME_GUARD_PYTHON is None:
             self.skipTest("python3.10 is not available to exercise the runtime guard")

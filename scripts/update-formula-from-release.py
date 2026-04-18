@@ -20,14 +20,17 @@ class FormulaUpdateError(RuntimeError):
 
 
 TARGET_PYTHON_VERSION = "3.13"
+TARGET_PYTHON_FULL_VERSION = "3.13.0"
 
 MARKER_ENV = {
     "implementation_name": "cpython",
     "platform_python_implementation": "CPython",
     "python_version": TARGET_PYTHON_VERSION,
-    "python_full_version": TARGET_PYTHON_VERSION,
+    "python_full_version": TARGET_PYTHON_FULL_VERSION,
     "sys_platform": "linux",
 }
+
+VERSION_MARKER_KEYS = {"python_version", "python_full_version"}
 
 
 def compute_sha256(path: Path) -> str:
@@ -67,6 +70,24 @@ def dependency_name(dependency: dict) -> str:
     return name
 
 
+def parse_version_marker_value(value: str) -> tuple[int, ...]:
+    if not re.fullmatch(r"\d+(?:\.\d+)*", value):
+        raise FormulaUpdateError(f"unsupported dependency marker version: {value}")
+    return tuple(int(part) for part in value.split("."))
+
+
+def compare_marker_values(key: str, actual: str, expected: str) -> int:
+    if key in VERSION_MARKER_KEYS:
+        actual_parts = parse_version_marker_value(actual)
+        expected_parts = parse_version_marker_value(expected)
+        width = max(len(actual_parts), len(expected_parts))
+        actual_value = actual_parts + (0,) * (width - len(actual_parts))
+        expected_value = expected_parts + (0,) * (width - len(expected_parts))
+        return (actual_value > expected_value) - (actual_value < expected_value)
+
+    return (actual > expected) - (actual < expected)
+
+
 def marker_applies(marker: str | None) -> bool:
     if not marker:
         return True
@@ -80,18 +101,20 @@ def marker_applies(marker: str | None) -> bool:
     if actual is None:
         raise FormulaUpdateError(f"unsupported dependency marker variable: {key}")
 
+    comparison = compare_marker_values(key, actual, expected)
+
     if operator == "==":
-        return actual == expected
+        return comparison == 0
     if operator == "!=":
-        return actual != expected
+        return comparison != 0
     if operator == "<":
-        return actual < expected
+        return comparison < 0
     if operator == "<=":
-        return actual <= expected
+        return comparison <= 0
     if operator == ">":
-        return actual > expected
+        return comparison > 0
     if operator == ">=":
-        return actual >= expected
+        return comparison >= 0
 
     raise FormulaUpdateError(f"unsupported dependency marker operator: {operator}")
 

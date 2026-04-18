@@ -53,6 +53,11 @@ jobs:
       - name: Set up git
         uses: Homebrew/actions/git-user-config@main
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
       - name: Resolve release metadata
         shell: bash
         run: |
@@ -129,7 +134,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          if ! python3 scripts/update-formula-from-release.py \
+          if ! python scripts/update-formula-from-release.py \
             --formula Formula/agendum.rb \
             --version "$VERSION" \
             --tarball "$TARBALL_PATH" \
