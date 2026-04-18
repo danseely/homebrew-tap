@@ -50,11 +50,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Homebrew
-        uses: Homebrew/actions/setup-homebrew@main
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Set up git
         uses: Homebrew/actions/git-user-config@main
 
@@ -110,62 +105,91 @@ jobs:
             echo "BASE_BRANCH=$base_branch"
           } >>"$GITHUB_ENV"
 
-      - name: Update formula version
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          tarball_path="$RUNNER_TEMP/agendum-${VERSION}.tar.gz"
-          curl --location --fail --silent --show-error "$TARBALL_URL" --output "$tarball_path"
-          sha256=$(shasum -a 256 "$tarball_path" | awk '{print $1}')
-
-          brew bump-formula-pr \
-            --write-only \
-            --commit \
-            --no-audit \
-            --url "$TARBALL_URL" \
-            --sha256 "$sha256" \
-            --version "$VERSION" \
-            --python-package-name agendum \
-            Formula/agendum.rb
-
-          echo "TARBALL_PATH=$tarball_path" >>"$GITHUB_ENV"
-
-      - name: Refresh Python resources
-        shell: bash
-        run: |
-          set -euo pipefail
-          if ! brew update-python-resources --package-name agendum --version "$VERSION" Formula/agendum.rb; then
-            echo "Homebrew could not resolve agendum resources automatically; regenerating from uv.lock." >&2
-            python3 scripts/refresh-python-resources.py --formula Formula/agendum.rb --tarball "$TARBALL_PATH"
-          fi
-
-          if ! git diff --quiet -- Formula/agendum.rb; then
-            git add Formula/agendum.rb
-            git commit --amend --no-edit
-          fi
-
       - name: Prepare release branch
         shell: bash
         run: |
           set -euo pipefail
-          git switch -C "$BRANCH"
+          git switch -C "$BRANCH" "origin/$BASE_BRANCH"
 
-      - name: Validate formula
+      - name: Download release tarball
         shell: bash
         run: |
           set -euo pipefail
-          brew install --build-from-source "$GITHUB_REPOSITORY_OWNER/tap/agendum"
-          brew test "$GITHUB_REPOSITORY_OWNER/tap/agendum"
-          brew audit --strict --online "$GITHUB_REPOSITORY_OWNER/tap/agendum"
+          tarball_path="$RUNNER_TEMP/agendum-${VERSION}.tar.gz"
+          if ! curl --location --fail --silent --show-error "$TARBALL_URL" --output "$tarball_path"; then
+            echo "Failed to download release tarball from $TARBALL_URL." >&2
+            exit 1
+          fi
+
+          echo "TARBALL_PATH=$tarball_path" >>"$GITHUB_ENV"
+
+      - name: Rewrite formula
+        id: rewrite_formula
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! python3 scripts/update-formula-from-release.py \
+            --formula Formula/agendum.rb \
+            --version "$VERSION" \
+            --tarball "$TARBALL_PATH" \
+            --tarball-url "$TARBALL_URL"; then
+            echo "Formula rewrite failed while updating Formula/agendum.rb from the release tarball." >&2
+            exit 1
+          fi
+
+          if git diff --quiet -- Formula/agendum.rb; then
+            echo "Formula already matches release $VERSION; skipping PR creation."
+            echo "no_changes=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "no_changes=false" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Homebrew
+        if: steps.rewrite_formula.outputs.no_changes != 'true'
+        uses: Homebrew/actions/setup-homebrew@main
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit formula update
+        if: steps.rewrite_formula.outputs.no_changes != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add Formula/agendum.rb
+          git commit -m "Bump agendum to $VERSION"
+
+      - name: Validate formula
+        if: steps.rewrite_formula.outputs.no_changes != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          formula_ref="$GITHUB_REPOSITORY_OWNER/tap/agendum"
+
+          if ! brew install --build-from-source "$formula_ref"; then
+            echo "Homebrew install failed for $formula_ref." >&2
+            exit 1
+          fi
+
+          if ! brew test "$formula_ref"; then
+            echo "Homebrew test failed for $formula_ref." >&2
+            exit 1
+          fi
+
+          if ! brew audit --strict --online "$formula_ref"; then
+            echo "Homebrew audit failed for $formula_ref." >&2
+            exit 1
+          fi
 
       - name: Push release branch
+        if: steps.rewrite_formula.outputs.no_changes != 'true'
         shell: bash
         run: |
           set -euo pipefail
           git push --force-with-lease origin HEAD:"$BRANCH"
 
       - name: Open or update PR
+        if: steps.rewrite_formula.outputs.no_changes != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -181,8 +205,8 @@ jobs:
           Tarball URL: $TARBALL_URL
           Published at: ${PUBLISHED_AT:-n/a}
 
-          This branch is created by the release automation workflow after the formula
-          update, resource refresh, and validation steps pass.
+          This branch is created by the release automation workflow after the repo-local
+          formula rewrite and Homebrew validation steps pass.
           EOF
 
           existing_pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')

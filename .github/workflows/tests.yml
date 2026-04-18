@@ -7,7 +7,17 @@ on:
   pull_request:
 
 jobs:
+  script-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tap
+        uses: actions/checkout@v4
+
+      - name: Run updater script tests
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
+
   test-bot:
+    needs: script-tests
     strategy:
       matrix:
         os: [ macos-15-intel, macos-26 ]
