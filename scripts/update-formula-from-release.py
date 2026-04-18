@@ -15,6 +15,14 @@ class FormulaUpdateError(RuntimeError):
     """Raised when the release tarball cannot be rendered into a formula."""
 
 
+MARKER_ENV = {
+    "implementation_name": "cpython",
+    "platform_python_implementation": "CPython",
+    "python_full_version": "3.13",
+    "sys_platform": "linux",
+}
+
+
 def compute_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -49,6 +57,35 @@ def dependency_name(dependency: dict) -> str:
     return name
 
 
+def marker_applies(marker: str | None) -> bool:
+    if not marker:
+        return True
+
+    match = re.fullmatch(r"([a-z_]+)\s*(==|!=|<|<=|>|>=)\s*'([^']+)'", marker.strip())
+    if match is None:
+        raise FormulaUpdateError(f"unsupported dependency marker: {marker}")
+
+    key, operator, expected = match.groups()
+    actual = MARKER_ENV.get(key)
+    if actual is None:
+        raise FormulaUpdateError(f"unsupported dependency marker variable: {key}")
+
+    if operator == "==":
+        return actual == expected
+    if operator == "!=":
+        return actual != expected
+    if operator == "<":
+        return actual < expected
+    if operator == "<=":
+        return actual <= expected
+    if operator == ">":
+        return actual > expected
+    if operator == ">=":
+        return actual >= expected
+
+    raise FormulaUpdateError(f"unsupported dependency marker operator: {operator}")
+
+
 def resource_packages(lockfile: dict) -> list[dict]:
     packages = lockfile.get("package")
     if not isinstance(packages, list) or not packages:
@@ -67,7 +104,11 @@ def resource_packages(lockfile: dict) -> list[dict]:
     if root_package is None:
         raise FormulaUpdateError("uv.lock does not define the editable root package")
 
-    queue = deque(dependency_name(dep) for dep in root_package.get("dependencies", []))
+    queue = deque(
+        dependency_name(dep)
+        for dep in root_package.get("dependencies", [])
+        if marker_applies(dep.get("marker"))
+    )
     seen: set[str] = set()
 
     while queue:
@@ -81,7 +122,8 @@ def resource_packages(lockfile: dict) -> list[dict]:
             raise FormulaUpdateError(f"missing package metadata for dependency: {name}")
 
         for dependency in package.get("dependencies", []):
-            queue.append(dependency_name(dependency))
+            if marker_applies(dependency.get("marker")):
+                queue.append(dependency_name(dependency))
 
     return [by_name[name] for name in sorted(seen)]
 
