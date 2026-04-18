@@ -38,17 +38,26 @@ The dispatch payload uses these fields:
 2. Downloads the upstream release tarball.
 3. Runs `scripts/update-formula-from-release.py` to rewrite `Formula/agendum.rb`.
 4. Exits cleanly without a PR if the formula already matches that release.
-5. Runs `brew install --build-from-source`, `brew test agendum`, and
-   `brew audit --strict --online`.
-6. Pushes the release branch and opens or updates the PR.
+5. Pushes the branch and opens or updates the release PR.
+
+That workflow only generates or updates a PR. It does not run Homebrew
+validation and it does not bottle or publish.
+
+PR CI is the only automated validation lane for the release PR. The relevant
+checks are the `brew test-bot` workflow, which includes the updater script tests
+and formula validation.
+
+Publishing and bottling happen separately through the normal Homebrew PR
+publish flow after the release PR is green.
 
 If an upstream release is missed, rerun the workflow with `workflow_dispatch`
 and the original release payload to reconcile it. The automation does not push
 formula changes directly to `main`.
 
 Formula mutation is repo-local on purpose. The updater script uses the release
-tarball and its bundled `uv.lock` as the source of truth, while Homebrew is
-used only to validate the rewritten formula.
+tarball and its bundled `uv.lock` as the source of truth, while PR CI verifies
+the rewritten formula. Publishing and bottling remain separate from release PR
+generation.
 
 ## Maintainer runbook
 
@@ -62,7 +71,7 @@ payload:
 - `tarball_url`
 - `published_at`
 
-For local investigation, download the release tarball and run:
+For local investigation, use Python 3.11+ to download the release tarball and run:
 
 ```bash
 python3 scripts/update-formula-from-release.py \
@@ -72,15 +81,19 @@ python3 scripts/update-formula-from-release.py \
   --tarball-url https://api.github.com/repos/danseely/agendum/tarball/v0.2.0
 ```
 
-Failure classes map to these recovery points:
+Use failure type to decide where to look:
 
-- tarball/checksum: release tarball could not be downloaded or hashed
-- `uv.lock` parsing: the release tarball is missing `uv.lock` or it is malformed
-- resource generation: a required dependency is missing metadata or an sdist
-- install: `brew install --build-from-source` fails for the rewritten formula
-- test: `brew test` fails the installed CLI self-check
-- audit: `brew audit --strict --online` reports a blocking problem
-- PR creation: the validated branch could not be pushed or the PR could not be created/updated
+- generation failure: the tarball could not be downloaded, hashed, parsed, or
+  rewritten by `scripts/update-formula-from-release.py`
+- PR CI failure: the release PR exists, but `brew test-bot` or the updater
+  script tests failed
+
+Generation failures are local to the release workflow and the updater script.
+PR CI failures are normal pull request failures and should be debugged from the
+checks on the PR.
+
+Once PR CI passes, bottling and publish follow the separate Homebrew PR flow;
+they are not part of the release generation workflow.
 
 If the updater script produces no diff for a release that has already been
 applied, the workflow exits successfully without pushing a branch or creating a

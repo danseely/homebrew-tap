@@ -53,6 +53,11 @@ jobs:
       - name: Set up git
         uses: Homebrew/actions/git-user-config@main
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
       - name: Resolve release metadata
         shell: bash
         run: |
@@ -129,7 +134,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          if ! python3 scripts/update-formula-from-release.py \
+          if ! python scripts/update-formula-from-release.py \
             --formula Formula/agendum.rb \
             --version "$VERSION" \
             --tarball "$TARBALL_PATH" \
@@ -152,41 +157,6 @@ jobs:
           set -euo pipefail
           git add Formula/agendum.rb
           git commit -m "Bump agendum to $VERSION"
-
-      - name: Set up Homebrew
-        if: steps.rewrite_formula.outputs.no_changes != 'true'
-        uses: Homebrew/actions/setup-homebrew@main
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Restore release branch
-        if: steps.rewrite_formula.outputs.no_changes != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          git switch "$BRANCH"
-
-      - name: Validate formula
-        if: steps.rewrite_formula.outputs.no_changes != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          formula_ref="$GITHUB_REPOSITORY_OWNER/tap/agendum"
-
-          if ! brew install --build-from-source "$formula_ref"; then
-            echo "Homebrew install failed for $formula_ref." >&2
-            exit 1
-          fi
-
-          if ! brew test "$formula_ref"; then
-            echo "Homebrew test failed for $formula_ref." >&2
-            exit 1
-          fi
-
-          if ! brew audit --strict --online "$formula_ref"; then
-            echo "Homebrew audit failed for $formula_ref." >&2
-            exit 1
-          fi
 
       - name: Push release branch
         if: steps.rewrite_formula.outputs.no_changes != 'true'
@@ -213,7 +183,7 @@ jobs:
           Published at: ${PUBLISHED_AT:-n/a}
 
           This branch is created by the release automation workflow after the repo-local
-          formula rewrite and Homebrew validation steps pass.
+          formula rewrite. Validation happens in PR CI.
           EOF
 
           existing_pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')

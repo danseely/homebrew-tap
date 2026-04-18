@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -15,6 +16,27 @@ SCRIPT_PATH = (
     Path(__file__).resolve().parents[1] / "scripts" / "update-formula-from-release.py"
 )
 TARBALL_URL = "https://api.github.com/repos/danseely/agendum/tarball/v0.2.0"
+
+
+def find_python(*candidates: str) -> str | None:
+    for candidate in candidates:
+        resolved = shutil.which(candidate)
+        if resolved is not None:
+            return resolved
+    return None
+
+
+def updater_python() -> str:
+    if sys.version_info >= (3, 11):
+        return sys.executable
+
+    resolved = find_python("python3.13", "python3.12", "python3.11")
+    if resolved is None:
+        raise unittest.SkipTest("python3.11+ is required for updater tests")
+    return resolved
+
+
+RUNTIME_GUARD_PYTHON = find_python("python3.10")
 FORMULA_TEMPLATE = textwrap.dedent(
     """\
     class Agendum < Formula
@@ -71,10 +93,19 @@ class UpdateFormulaFromReleaseTests(unittest.TestCase):
                 archive.addfile(info, io.BytesIO(lockfile_bytes))
         return tarball_path
 
-    def run_script(self, formula_path: Path, tarball_path: Path) -> subprocess.CompletedProcess[str]:
+    def run_script(
+        self,
+        formula_path: Path,
+        tarball_path: Path,
+        *,
+        python: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        if python is None:
+            python = updater_python()
+
         return subprocess.run(
             [
-                sys.executable,
+                python,
                 str(SCRIPT_PATH),
                 "--formula",
                 str(formula_path),
@@ -243,6 +274,8 @@ class UpdateFormulaFromReleaseTests(unittest.TestCase):
                 version = "1.27.0"
                 dependencies = [
                   { name = "pywin32", marker = "sys_platform == 'win32'" },
+                  { name = "typing-extensions", marker = "python_version == '3.12'" },
+                  { name = "pygments", marker = "python_version == '3.13'" },
                   { name = "rich" },
                 ]
                 sdist = { url = "https://example.com/mcp-1.27.0.tar.gz", hash = "sha256:mcphash" }
@@ -259,6 +292,12 @@ class UpdateFormulaFromReleaseTests(unittest.TestCase):
                 version = "14.3.4"
                 dependencies = []
                 sdist = { url = "https://example.com/rich-14.3.4.tar.gz", hash = "sha256:richhash" }
+
+                [[package]]
+                name = "pygments"
+                version = "2.19.1"
+                dependencies = []
+                sdist = { url = "https://example.com/pygments-2.19.1.tar.gz", hash = "sha256:pygmentshash" }
                 """
             )
         )
@@ -268,8 +307,76 @@ class UpdateFormulaFromReleaseTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         updated = formula_path.read_text()
         self.assertIn('resource "mcp"', updated)
+        self.assertIn('resource "pygments"', updated)
         self.assertIn('resource "rich"', updated)
         self.assertNotIn('resource "pywin32"', updated)
+        self.assertNotIn('resource "typing-extensions"', updated)
+
+    def test_uses_numeric_ordering_for_python_version_markers(self) -> None:
+        formula_path = self.write_formula()
+        tarball_path = self.write_tarball(
+            lockfile_text=textwrap.dedent(
+                """\
+                version = 1
+
+                [[package]]
+                name = "agendum"
+                version = "0.2.0"
+                source = { editable = "." }
+                dependencies = [
+                  { name = "keep-ge-3-10", marker = "python_version >= '3.10'" },
+                  { name = "skip-ge-3-14", marker = "python_version >= '3.14'" },
+                  { name = "keep-full-le-3-13-0", marker = "python_full_version <= '3.13.0'" },
+                  { name = "skip-full-gt-3-13-0", marker = "python_full_version > '3.13.0'" },
+                ]
+
+                [[package]]
+                name = "keep-ge-3-10"
+                version = "1.0.0"
+                dependencies = []
+                sdist = { url = "https://example.com/keep-ge-3-10-1.0.0.tar.gz", hash = "sha256:keepge310hash" }
+
+                [[package]]
+                name = "skip-ge-3-14"
+                version = "1.0.0"
+                dependencies = []
+                sdist = { url = "https://example.com/skip-ge-3-14-1.0.0.tar.gz", hash = "sha256:skipge314hash" }
+
+                [[package]]
+                name = "keep-full-le-3-13-0"
+                version = "1.0.0"
+                dependencies = []
+                sdist = { url = "https://example.com/keep-full-le-3-13-0-1.0.0.tar.gz", hash = "sha256:keepfullhash" }
+
+                [[package]]
+                name = "skip-full-gt-3-13-0"
+                version = "1.0.0"
+                dependencies = []
+                sdist = { url = "https://example.com/skip-full-gt-3-13-0-1.0.0.tar.gz", hash = "sha256:skipfullhash" }
+                """
+            )
+        )
+
+        result = self.run_script(formula_path, tarball_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        updated = formula_path.read_text()
+        self.assertIn('resource "keep-ge-3-10"', updated)
+        self.assertIn('resource "keep-full-le-3-13-0"', updated)
+        self.assertNotIn('resource "skip-ge-3-14"', updated)
+        self.assertNotIn('resource "skip-full-gt-3-13-0"', updated)
+
+    def test_requires_python_3_11_plus_runtime(self) -> None:
+        if RUNTIME_GUARD_PYTHON is None:
+            self.skipTest("python3.10 is not available to exercise the runtime guard")
+
+        formula_path = self.write_formula()
+        tarball_path = self.write_tarball(lockfile_text=None)
+
+        result = self.run_script(formula_path, tarball_path, python=RUNTIME_GUARD_PYTHON)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires Python 3.11+", result.stderr)
 
 
 if __name__ == "__main__":
