@@ -1,0 +1,199 @@
+name: agendum release pr
+
+on:
+  repository_dispatch:
+    types:
+      - agendum_release_published
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        description: Upstream repository that published the release
+        required: false
+        type: string
+      tag:
+        description: Release tag to replay
+        required: true
+        type: string
+      version:
+        description: Release version
+        required: false
+        type: string
+      release_url:
+        description: Upstream release URL
+        required: false
+        type: string
+      tarball_url:
+        description: Release tarball URL
+        required: true
+        type: string
+      published_at:
+        description: Release published timestamp
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: agendum-release-pr-${{ github.event.client_payload.tag || inputs.tag || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  update-release-pr:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Check out tap
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Homebrew
+        uses: Homebrew/actions/setup-homebrew@main
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up git
+        uses: Homebrew/actions/git-user-config@main
+
+      - name: Resolve release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_EVENT_NAME" == "repository_dispatch" ]]; then
+            payload='${{ toJson(github.event.client_payload) }}'
+            source_repo=$(jq -r '.source_repo // ""' <<<"$payload")
+            tag=$(jq -r '.tag // ""' <<<"$payload")
+            version=$(jq -r '.version // ""' <<<"$payload")
+            release_url=$(jq -r '.release_url // ""' <<<"$payload")
+            tarball_url=$(jq -r '.tarball_url // ""' <<<"$payload")
+            published_at=$(jq -r '.published_at // ""' <<<"$payload")
+          else
+            source_repo='${{ inputs.source_repo }}'
+            tag='${{ inputs.tag }}'
+            version='${{ inputs.version }}'
+            release_url='${{ inputs.release_url }}'
+            tarball_url='${{ inputs.tarball_url }}'
+            published_at='${{ inputs.published_at }}'
+          fi
+
+          if [[ -z "$tag" ]]; then
+            echo "tag is required" >&2
+            exit 1
+          fi
+
+          if [[ -z "$tarball_url" ]]; then
+            echo "tarball_url is required" >&2
+            exit 1
+          fi
+
+          if [[ -z "$version" ]]; then
+            version="${tag#v}"
+          fi
+
+          branch="release/agendum-${tag#v}"
+          branch="${branch//\//-}"
+          branch="${branch//[^A-Za-z0-9._-]/-}"
+          base_branch=$(gh repo view "$GITHUB_REPOSITORY" --json defaultBranchRef --jq '.defaultBranchRef.name')
+
+          {
+            echo "SOURCE_REPO=$source_repo"
+            echo "TAG=$tag"
+            echo "VERSION=$version"
+            echo "RELEASE_URL=$release_url"
+            echo "TARBALL_URL=$tarball_url"
+            echo "PUBLISHED_AT=$published_at"
+            echo "BRANCH=$branch"
+            echo "BASE_BRANCH=$base_branch"
+          } >>"$GITHUB_ENV"
+
+      - name: Update formula version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tarball_path="$RUNNER_TEMP/agendum-${VERSION}.tar.gz"
+          curl --location --fail --silent --show-error "$TARBALL_URL" --output "$tarball_path"
+          sha256=$(shasum -a 256 "$tarball_path" | awk '{print $1}')
+
+          brew bump-formula-pr \
+            --write-only \
+            --commit \
+            --no-audit \
+            --url "$TARBALL_URL" \
+            --sha256 "$sha256" \
+            --version "$VERSION" \
+            --python-package-name agendum \
+            Formula/agendum.rb
+
+          echo "TARBALL_PATH=$tarball_path" >>"$GITHUB_ENV"
+
+      - name: Refresh Python resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! brew update-python-resources --package-name agendum --version "$VERSION" Formula/agendum.rb; then
+            echo "Homebrew could not resolve agendum resources automatically; regenerating from uv.lock." >&2
+            python3 scripts/refresh-python-resources.py --formula Formula/agendum.rb --tarball "$TARBALL_PATH"
+          fi
+
+          if ! git diff --quiet -- Formula/agendum.rb; then
+            git add Formula/agendum.rb
+            git commit --amend --no-edit
+          fi
+
+      - name: Prepare release branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git switch -C "$BRANCH"
+
+      - name: Tap local repo for validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew tap "$GITHUB_REPOSITORY_OWNER/tap" "$GITHUB_WORKSPACE"
+
+      - name: Validate formula
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install --build-from-source "$GITHUB_REPOSITORY_OWNER/tap/agendum"
+          brew test "$GITHUB_REPOSITORY_OWNER/tap/agendum"
+          brew audit --strict --online "$GITHUB_REPOSITORY_OWNER/tap/agendum"
+
+      - name: Push release branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push --force-with-lease origin HEAD:"$BRANCH"
+
+      - name: Open or update PR
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          title="Bump agendum to $VERSION"
+          body_file="$RUNNER_TEMP/agendum-pr-body.md"
+
+          cat >"$body_file" <<EOF
+          Update agendum to $VERSION from ${SOURCE_REPO:-unknown}.
+
+          Release tag: $TAG
+          Release URL: ${RELEASE_URL:-n/a}
+          Tarball URL: $TARBALL_URL
+          Published at: ${PUBLISHED_AT:-n/a}
+
+          This branch is created by the release automation workflow after the formula
+          update, resource refresh, and validation steps pass.
+          EOF
+
+          existing_pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [[ -n "$existing_pr" ]]; then
+            gh pr edit "$existing_pr" --title "$title" --body-file "$body_file"
+          else
+            gh pr create --head "$BRANCH" --base "$BASE_BRANCH" --title "$title" --body-file "$body_file"
+          fi
