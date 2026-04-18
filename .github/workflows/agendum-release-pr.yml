@@ -145,12 +145,6 @@ jobs:
             echo "no_changes=false" >>"$GITHUB_OUTPUT"
           fi
 
-      - name: Set up Homebrew
-        if: steps.rewrite_formula.outputs.no_changes != 'true'
-        uses: Homebrew/actions/setup-homebrew@main
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Commit formula update
         if: steps.rewrite_formula.outputs.no_changes != 'true'
         shell: bash
@@ -158,6 +152,19 @@ jobs:
           set -euo pipefail
           git add Formula/agendum.rb
           git commit -m "Bump agendum to $VERSION"
+
+      - name: Set up Homebrew
+        if: steps.rewrite_formula.outputs.no_changes != 'true'
+        uses: Homebrew/actions/setup-homebrew@main
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore release branch
+        if: steps.rewrite_formula.outputs.no_changes != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git switch "$BRANCH"
 
       - name: Validate formula
         if: steps.rewrite_formula.outputs.no_changes != 'true'
