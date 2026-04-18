@@ -4,7 +4,7 @@ class Agendum < Formula
   desc "Terminal dashboard for GitHub PRs, issues, and tasks"
   homepage "https://github.com/danseely/agendum"
   url "https://github.com/danseely/agendum/archive/refs/tags/v0.2.0.tar.gz"
-  sha256 "bad02f5311e8bc77dc6e7ddebac31dcc047920e602e17c1e756e11579606999d"
+  sha256 "455729bd8dc7a833f1b7e7b5f60122ba1bbeafc2ed3f070bff44f83f86c65f4d"
   license "Apache-2.0"
 
   depends_on "pkgconf" => :build
@@ -12,8 +12,7 @@ class Agendum < Formula
   depends_on "gh"
   depends_on "libffi"
   depends_on "openssl@3"
-  depends_on "python@3.13"
-  resource "annotated-types" do
+  depends_on "python@3.13"  resource "annotated-types" do
     url "https://files.pythonhosted.org/packages/ee/67/531ea369ba64dcff5ec9c3402f9f51bf748cec26dde048a2f973a4eea7f5/annotated_types-0.7.0.tar.gz"
     sha256 "aff07c09a53a08bc8cfccb9c85b05f1aa9a2a6f23728d790723543408344ce89"
   end

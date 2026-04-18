@@ -32,7 +32,9 @@ The dispatch payload uses these fields:
 - `tarball_url`
 - `published_at`
 
-`tag` and `tarball_url` are required inputs for a valid run. The workflow:
+`tag` and `tarball_url` are required inputs for a valid run. GitHub tarball
+inputs are normalized to Homebrew-compatible `/archive/refs/tags/...tar.gz`
+URLs before the formula is rewritten. The workflow:
 
 1. Creates or resets the release branch from the tap default branch.
 2. Downloads the upstream release tarball.
@@ -78,7 +80,7 @@ python3 scripts/update-formula-from-release.py \
   --formula Formula/agendum.rb \
   --version 0.2.0 \
   --tarball /tmp/agendum-v0.2.0.tar.gz \
-  --tarball-url https://api.github.com/repos/danseely/agendum/tarball/v0.2.0
+  --tarball-url https://github.com/danseely/agendum/archive/refs/tags/v0.2.0.tar.gz
 ```
 
 Use failure type to decide where to look:
