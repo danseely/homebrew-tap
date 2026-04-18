@@ -225,6 +225,52 @@ class UpdateFormulaFromReleaseTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("package rich is missing sdist metadata", result.stderr)
 
+    def test_skips_dependencies_filtered_out_by_markers(self) -> None:
+        formula_path = self.write_formula()
+        tarball_path = self.write_tarball(
+            lockfile_text=textwrap.dedent(
+                """\
+                version = 1
+
+                [[package]]
+                name = "agendum"
+                version = "0.2.0"
+                source = { editable = "." }
+                dependencies = [{ name = "mcp" }]
+
+                [[package]]
+                name = "mcp"
+                version = "1.27.0"
+                dependencies = [
+                  { name = "pywin32", marker = "sys_platform == 'win32'" },
+                  { name = "rich" },
+                ]
+                sdist = { url = "https://example.com/mcp-1.27.0.tar.gz", hash = "sha256:mcphash" }
+
+                [[package]]
+                name = "pywin32"
+                version = "311"
+                wheels = [
+                  { url = "https://example.com/pywin32.whl", hash = "sha256:wheelhash" },
+                ]
+
+                [[package]]
+                name = "rich"
+                version = "14.3.4"
+                dependencies = []
+                sdist = { url = "https://example.com/rich-14.3.4.tar.gz", hash = "sha256:richhash" }
+                """
+            )
+        )
+
+        result = self.run_script(formula_path, tarball_path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        updated = formula_path.read_text()
+        self.assertIn('resource "mcp"', updated)
+        self.assertIn('resource "rich"', updated)
+        self.assertNotIn('resource "pywin32"', updated)
+
 
 if __name__ == "__main__":
     unittest.main()
