@@ -3,8 +3,8 @@ class Agendum < Formula
 
   desc "Terminal dashboard for GitHub PRs, issues, and tasks"
   homepage "https://github.com/danseely/agendum"
-  url "https://github.com/danseely/agendum/archive/refs/tags/v0.4.0.tar.gz"
-  sha256 "4d6c51191577b8b7f6ac3acf04c43e450fdcf52ace3048ad427ccefe6cd94d9c"
+  url "https://github.com/danseely/agendum/archive/refs/tags/v0.5.0.tar.gz"
+  sha256 "a5653e48353aa7d3c852c88c0579aec3f252ea791a001b966009634bd29b5400"
   license "Apache-2.0"
 
   depends_on "pkgconf" => :build
